@@ -8,6 +8,7 @@
 <style>
 body { font-family: Arial; background:#f4f4f4; }
 .chart { display:inline-block; margin:20px; background:white; padding:10px; border-radius:8px; }
+
 .tooltip {
     position:absolute;
     background:black;
@@ -23,7 +24,7 @@ body { font-family: Arial; background:#f4f4f4; }
 
 <body>
 
-<h2>WHO Top Causes of Death – Interactive Dashboard</h2>
+<h2>WHO Top Causes of Death (Interactive Dashboard)</h2>
 
 <label>Year: <span id="yearLabel"></span></label>
 <input type="range" id="yearSlider">
@@ -38,9 +39,9 @@ body { font-family: Arial; background:#f4f4f4; }
 // ================= LOAD LOCAL CSV =================
 d3.csv("GHE_FULL_DD.csv").then(raw => {
 
-    console.log("DATA LOADED", raw.slice(0,5));
+    console.log("DATA LOADED:", raw.slice(0,5));
 
-    // CLEAN DATA
+    // ================= CLEAN DATA =================
     const data = raw.map(d => ({
         cause: d.Cause,
         country: d.Country,
@@ -49,7 +50,7 @@ d3.csv("GHE_FULL_DD.csv").then(raw => {
         deaths: +d.Deaths
     })).filter(d => d.cause && d.year && d.deaths);
 
-    const years = [...new Set(data.map(d => d.year))].sort();
+    const years = [...new Set(data.map(d => d.year))].sort((a,b)=>a-b);
 
     // ================= SLIDER =================
     const slider = d3.select("#yearSlider")
@@ -66,13 +67,20 @@ d3.csv("GHE_FULL_DD.csv").then(raw => {
         update();
     });
 
-    // ================= BAR CHART =================
+    // ================= SVG SETUP =================
     const width = 500, height = 300;
 
     const svgBar = d3.select("#barChart")
         .append("svg")
         .attr("width", width)
         .attr("height", height);
+
+    const svgBubble = d3.select("#bubbleChart")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+    const tooltip = d3.select("#tooltip");
 
     const x = d3.scaleBand().range([50, width-20]).padding(0.2);
     const y = d3.scaleLinear().range([height-40, 20]);
@@ -82,14 +90,6 @@ d3.csv("GHE_FULL_DD.csv").then(raw => {
 
     svgBar.append("g").attr("class","y-axis")
         .attr("transform", `translate(50,0)`);
-
-    // ================= BUBBLE CHART =================
-    const svgBubble = d3.select("#bubbleChart")
-        .append("svg")
-        .attr("width", width)
-        .attr("height", height);
-
-    const tooltip = d3.select("#tooltip");
 
     // ================= UPDATE FUNCTION =================
     function update(){
@@ -106,7 +106,7 @@ d3.csv("GHE_FULL_DD.csv").then(raw => {
         .slice(0,10)
         .map(d => ({cause:d[0], deaths:d[1]}));
 
-        // ================= BAR =================
+        // ================= BAR CHART =================
         x.domain(top.map(d => d.cause));
         y.domain([0, d3.max(top, d => d.deaths)]);
 
@@ -157,7 +157,10 @@ d3.csv("GHE_FULL_DD.csv").then(raw => {
             .attr("fill","orange")
             .on("mouseover", (event,d)=>{
                 tooltip.style("opacity",1)
-                    .html(`<b>${d.data.cause}</b><br>Deaths: ${d.data.deaths}`)
+                    .html(`
+                        <b>${d.data.cause}</b><br>
+                        Deaths: ${d.data.deaths}
+                    `)
                     .style("left",(event.pageX+10)+"px")
                     .style("top",(event.pageY-20)+"px");
             })
