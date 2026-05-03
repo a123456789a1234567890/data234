@@ -2,77 +2,67 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>D3 Working Global Dashboard</title>
+<title>D3 FIXED DASHBOARD</title>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 
 <style>
 body { font-family: Arial; background:#f4f4f4; }
 .chart { display:inline-block; margin:20px; background:white; padding:10px; border-radius:8px; }
-.tooltip {
-    position:absolute;
-    background:black;
-    color:white;
-    padding:6px;
-    border-radius:5px;
-    font-size:12px;
-    pointer-events:none;
-    opacity:0;
-}
 </style>
 </head>
 
 <body>
 
-<h2>Interactive Global Health Dashboard (Working Version)</h2>
+<h2>D3 Dashboard (Debug Fixed Version)</h2>
 
 <label>Year: <span id="yearLabel"></span></label>
 <input type="range" id="yearSlider">
-
-<div id="tooltip" class="tooltip"></div>
 
 <div id="lineChart" class="chart"></div>
 <div id="bubbleChart" class="chart"></div>
 
 <script>
 
-// ================= STABLE DATA SOURCE =================
-const API_URL = "https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/data_gapminder.csv";
+const url = "https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/data_gapminder.csv";
 
-const tooltip = d3.select("#tooltip");
+d3.csv(url).then(raw => {
 
-// ================= LOAD DATA =================
-d3.csv(API_URL).then(raw => {
+    console.log("DATA LOADED:", raw.slice(0,5)); // DEBUG
 
-    let data = raw;
+    const data = raw.map(d => ({
+        country: d.country,
+        year: +d.year,
+        lifeExp: +d.lifeExp,
+        pop: +d.pop
+    })).filter(d => d.country && d.year && d.lifeExp && d.pop);
 
-    // CLEAN DATA TYPES
-    data.forEach(d => {
-        d.year = +d.year;
-        d.lifeExp = +d.lifeExp;
-        d.pop = +d.pop;
-    });
+    console.log("CLEAN DATA:", data.slice(0,5)); // DEBUG
 
     const years = [...new Set(data.map(d => d.year))].sort((a,b)=>a-b);
 
-    // ================= SLIDER =================
+    // SLIDER
     const slider = d3.select("#yearSlider")
         .attr("min", d3.min(years))
         .attr("max", d3.max(years))
-        .attr("value", d3.min(years));
+        .attr("value", years[0]);
 
-    let currentYear = +slider.node().value;
-    d3.select("#yearLabel").text(currentYear);
+    let year = years[0];
+    d3.select("#yearLabel").text(year);
 
     slider.on("input", function(){
-        currentYear = +this.value;
-        d3.select("#yearLabel").text(currentYear);
-        update();
+        year = +this.value;
+        d3.select("#yearLabel").text(year);
+        draw();
     });
 
-    // ================= LINE CHART =================
     const width = 500, height = 300;
 
     const svgLine = d3.select("#lineChart")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+    const svgBubble = d3.select("#bubbleChart")
         .append("svg")
         .attr("width", width)
         .attr("height", height);
@@ -92,43 +82,29 @@ d3.csv(API_URL).then(raw => {
 
     const path = svgLine.append("path")
         .attr("fill","none")
-        .attr("stroke","steelblue")
+        .attr("stroke","blue")
         .attr("stroke-width",2);
 
-    // ================= BUBBLE CHART =================
-    const svgBubble = d3.select("#bubbleChart")
-        .append("svg")
-        .attr("width", 500)
-        .attr("height", 300);
+    function draw(){
 
-    // ================= UPDATE FUNCTION =================
-    function update(){
+        const filtered = data.filter(d => d.year === year);
 
-        const filtered = data.filter(d => d.year === currentYear);
+        console.log("FILTERED:", filtered.length); // DEBUG
 
-        // ---------- LINE (GLOBAL AVERAGE) ----------
-        const avgByYear = d3.rollups(
+        // LINE (global avg)
+        const avg = d3.rollups(
             data,
             v => d3.mean(v, d => d.lifeExp),
             d => d.year
         ).map(d => ({year:d[0], lifeExp:d[1]}));
 
-        x.domain(d3.extent(avgByYear, d => d.year));
-        y.domain([0, d3.max(avgByYear, d => d.lifeExp)]);
+        x.domain(d3.extent(avg, d => d.year));
+        y.domain([0, d3.max(avg, d => d.lifeExp)]);
 
-        svgLine.select(".x-axis")
-            .transition().duration(700)
-            .call(d3.axisBottom(x).tickFormat(d3.format("d")));
-
-        svgLine.select(".y-axis")
-            .transition().duration(700)
-            .call(d3.axisLeft(y));
-
-        path.datum(avgByYear)
-            .transition().duration(700)
+        path.datum(avg)
             .attr("d", line);
 
-        // ---------- BUBBLE PACK ----------
+        // BUBBLE FIXED
         const root = d3.pack()
             .size([500,300])
             .padding(5)(
@@ -142,27 +118,15 @@ d3.csv(API_URL).then(raw => {
         nodes.enter()
             .append("circle")
             .merge(nodes)
-            .transition().duration(700)
             .attr("cx", d => d.x)
             .attr("cy", d => d.y)
             .attr("r", d => d.r)
-            .attr("fill","orange")
-            .on("mouseover", (event,d)=>{
-                tooltip.style("opacity",1)
-                    .html(`
-                        <b>${d.data.country}</b><br>
-                        Life Exp: ${d.data.lifeExp.toFixed(2)}<br>
-                        Population: ${d.data.pop}
-                    `)
-                    .style("left",(event.pageX+10)+"px")
-                    .style("top",(event.pageY-20)+"px");
-            })
-            .on("mouseout", ()=> tooltip.style("opacity",0));
+            .attr("fill","orange");
 
         nodes.exit().remove();
     }
 
-    update();
+    draw();
 
 });
 
