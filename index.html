@@ -1,183 +1,605 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>WHO Dashboard FIXED</title>
-<script src="https://d3js.org/d3.v7.min.js"></script>
-
-<style>
-body { font-family: Arial; background:#f4f4f4; }
-.chart { display:inline-block; margin:20px; background:white; padding:10px; border-radius:8px; }
-
-.tooltip {
-    position:absolute;
-    background:black;
-    color:white;
-    padding:6px;
-    border-radius:5px;
-    font-size:12px;
-    pointer-events:none;
-    opacity:0;
-}
-</style>
-</head>
-
-<body>
-
-<h2>WHO Causes of Death Dashboard (FIXED VERSION)</h2>
-
-<label>Year: <span id="yearLabel"></span></label>
-<input type="range" id="yearSlider">
-
-<div id="tooltip" class="tooltip"></div>
-
-<div id="barChart" class="chart"></div>
-<div id="bubbleChart" class="chart"></div>
-
-<script>
-
-// ================= LOAD CSV =================
-d3.csv("GHE_FULL_DD.csv").then(raw => {
-
-    console.log("RAW DATA SAMPLE:", raw[0]); // DEBUG
-
-    // ================= SMART DATA CLEANING =================
-    const data = raw.map(d => {
-
-        return {
-            cause: d["Cause"] || d["Cause of death"] || d["GHECAUSES"] || d["Dim1"],
-            year: + (d["Year"] || d["YEAR"] || d["Time"]),
-            deaths: + (d["Deaths"] || d["Numeric"] || d["Value"]),
-            country: d["Country"] || d["SpatialDimValueCode"] || "Unknown"
-        };
-
-    }).filter(d =>
-        d.cause &&
-        !isNaN(d.year) &&
-        !isNaN(d.deaths)
-    );
-
-    console.log("CLEAN DATA SAMPLE:", data.slice(0,5));
-
-    const years = [...new Set(data.map(d => d.year))].sort((a,b)=>a-b);
-
-    // ================= SLIDER =================
-    const slider = d3.select("#yearSlider")
-        .attr("min", d3.min(years))
-        .attr("max", d3.max(years))
-        .attr("value", years[0]);
-
-    let currentYear = years[0];
-    d3.select("#yearLabel").text(currentYear);
-
-    slider.on("input", function(){
-        currentYear = +this.value;
-        d3.select("#yearLabel").text(currentYear);
-        update();
-    });
-
-    // ================= SVG SETUP =================
-    const width = 500, height = 300;
-
-    const svgBar = d3.select("#barChart")
-        .append("svg")
-        .attr("width", width)
-        .attr("height", height);
-
-    const svgBubble = d3.select("#bubbleChart")
-        .append("svg")
-        .attr("width", width)
-        .attr("height", height);
-
-    const tooltip = d3.select("#tooltip");
-
-    const x = d3.scaleBand().range([50, width-20]).padding(0.2);
-    const y = d3.scaleLinear().range([height-40, 20]);
-
-    svgBar.append("g").attr("class","x-axis")
-        .attr("transform", `translate(0,${height-40})`);
-
-    svgBar.append("g").attr("class","y-axis")
-        .attr("transform", `translate(50,0)`);
-
-    // ================= UPDATE FUNCTION =================
-    function update(){
-
-        const filtered = data.filter(d => +d.year === +currentYear);
-
-        if(filtered.length === 0){
-            console.log("No data for year:", currentYear);
-            return;
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Global Health Explorer | D3 Dashboard</title>
+    <!-- D3 Library v7 -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
         }
 
-        // TOP 10 CAUSES
-        const top = d3.rollups(
-            filtered,
-            v => d3.sum(v, d => d.deaths),
-            d => d.cause
-        )
-        .sort((a,b)=>d3.descending(a[1], b[1]))
-        .slice(0,10)
-        .map(d => ({cause:d[0], deaths:d[1]}));
+        body {
+            font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+            background: #f4f7fc;
+            margin: 0;
+            padding: 24px 20px;
+            color: #1a2c3e;
+        }
 
-        // ================= BAR CHART =================
-        x.domain(top.map(d => d.cause));
-        y.domain([0, d3.max(top, d => d.deaths)]);
+        .dashboard-container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
 
-        svgBar.select(".x-axis")
-            .transition().duration(600)
-            .call(d3.axisBottom(x))
-            .selectAll("text")
-            .attr("transform","rotate(-40)")
-            .style("text-anchor","end");
+        h1 {
+            font-size: 2rem;
+            margin: 0 0 0.2rem 0;
+            color: #0b3b5f;
+            letter-spacing: -0.5px;
+        }
 
-        svgBar.select(".y-axis")
-            .transition().duration(600)
-            .call(d3.axisLeft(y));
+        .subhead {
+            color: #2c5a7a;
+            margin-bottom: 2rem;
+            border-left: 4px solid #2c7cb0;
+            padding-left: 16px;
+            font-weight: 400;
+        }
 
-        const bars = svgBar.selectAll("rect")
-            .data(top, d => d.cause);
+        /* Controls panel */
+        .controls-panel {
+            background: white;
+            border-radius: 20px;
+            padding: 1.2rem 1.8rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+            align-items: flex-end;
+            border: 1px solid #e2edf2;
+        }
 
-        bars.enter()
-            .append("rect")
-            .merge(bars)
-            .transition().duration(600)
-            .attr("x", d => x(d.cause))
-            .attr("y", d => y(d.deaths))
-            .attr("width", x.bandwidth())
-            .attr("height", d => height-40 - y(d.deaths))
-            .attr("fill","steelblue");
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-width: 220px;
+        }
 
-        bars.exit().remove();
+        .control-group label {
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #2c6e9e;
+        }
 
-        // ================= BUBBLE CHART =================
-        const root = d3.pack()
-            .size([500,300])
-            .padding(5)(
-                d3.hierarchy({children: top})
-                .sum(d => d.deaths)
-            );
+        select {
+            padding: 10px 14px;
+            font-size: 0.95rem;
+            border-radius: 40px;
+            border: 1px solid #cbdbe2;
+            background: white;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.2s;
+            font-family: inherit;
+        }
 
-        const nodes = svgBubble.selectAll("circle")
-            .data(root.leaves(), d => d.data.cause);
+        select:hover {
+            border-color: #2c7cb0;
+        }
 
-        nodes.enter()
-            .append("circle")
-            .merge(nodes)
-            .transition().duration(600)
-            .attr("cx", d => d.x)
-            .attr("cy", d => d.y)
-            .attr("r", d => d.r)
-            .attr("fill","orange");
+        .stats-badge {
+            background: #e9f2f8;
+            padding: 8px 16px;
+            border-radius: 40px;
+            font-size: 0.85rem;
+            color: #1a5d7d;
+            font-weight: 500;
+        }
 
-        nodes.exit().remove();
+        /* charts grid */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+            gap: 2rem;
+        }
+
+        .chart-card {
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+            padding: 1rem 1rem 1rem 1rem;
+            transition: all 0.2s;
+            border: 1px solid #eef2f9;
+        }
+
+        .chart-title {
+            font-size: 1.35rem;
+            font-weight: 600;
+            margin: 0 0 0.25rem 0;
+            padding-bottom: 6px;
+            border-bottom: 2px solid #cbe0ec;
+            display: inline-block;
+        }
+
+        .chart-sub {
+            font-size: 0.75rem;
+            color: #5f7f9c;
+            margin-bottom: 1rem;
+        }
+
+        .chart-wrapper {
+            width: 100%;
+            min-height: 400px;
+            overflow-x: auto;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.75);
+            color: white;
+            padding: 8px 14px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            pointer-events: none;
+            backdrop-filter: blur(4px);
+            z-index: 100;
+            font-weight: 500;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        footer {
+            margin-top: 2.5rem;
+            text-align: center;
+            font-size: 0.75rem;
+            color: #6c8dae;
+            border-top: 1px solid #d0e2ef;
+            padding-top: 1.2rem;
+        }
+
+        @media (max-width: 700px) {
+            .charts-grid { grid-template-columns: 1fr; }
+            body { padding: 16px; }
+        }
+    </style>
+</head>
+<body>
+<div class="dashboard-container">
+    <h1>🌍 Global Health Dashboard</h1>
+    <div class="subhead">Death rates per 100,000 population (2021) · Interactive D3 visualizations</div>
+
+    <div class="controls-panel">
+        <div class="control-group">
+            <label>📍 Select Country</label>
+            <select id="country-select"></select>
+        </div>
+        <div class="control-group">
+            <label>🦠 Select Cause (for country comparison)</label>
+            <select id="cause-select"></select>
+        </div>
+        <div class="stats-badge" id="data-summary">
+            🧬 Loading dataset...
+        </div>
+    </div>
+
+    <div class="charts-grid">
+        <!-- Chart 1: Top global causes (average across countries) -->
+        <div class="chart-card">
+            <div class="chart-title">🌐 Top 15 causes worldwide</div>
+            <div class="chart-sub">Average death rate per 100k (click bar to explore cause)</div>
+            <div id="global-chart" class="chart-wrapper"></div>
+        </div>
+
+        <!-- Chart 2: Top causes for selected country -->
+        <div class="chart-card">
+            <div class="chart-title" id="country-chart-title">🏥 Top causes · Afghanistan</div>
+            <div class="chart-sub">Leading causes of death (rate per 100k)</div>
+            <div id="country-causes-chart" class="chart-wrapper"></div>
+        </div>
+
+        <!-- Chart 3: Top countries for selected cause -->
+        <div class="chart-card">
+            <div class="chart-title" id="cause-chart-title">🌎 Top countries · Ischaemic heart disease</div>
+            <div class="chart-sub">Highest death rates for specific cause</div>
+            <div id="cause-countries-chart" class="chart-wrapper"></div>
+        </div>
+    </div>
+    <footer>
+        📊 Data: Global Health Estimates (WHO) 2021. Rates per 100k, both sexes. Dashboard uses D3.js | Click on global bars to update cause analysis.
+    </footer>
+</div>
+
+<script>
+    // ---------- GLOBALS ----------
+    let fullData = [];               // raw objects
+    let countryMap = new Map();     // key: countryCode -> array of {cause, rate}
+    let causeMap = new Map();       // key: causeName -> array of {country, rate}
+    let globalAvgCauses = [];       // [{cause, avgRate}]
+    let allCountries = [];
+    let allCauses = [];
+
+    // chart dimensions & margins
+    const margin = { top: 45, right: 20, bottom: 70, left: 130 };
+    let width = 500, height = 420;
+
+    // references to current charts
+    let globalSvg = null, countrySvg = null, causeSvg = null;
+
+    // Tooltip div
+    const tooltip = d3.select("body").append("div")
+        .attr("class", "tooltip")
+        .style("opacity", 0);
+
+    // ---------- LOAD & PREPARE DATA ----------
+    function resizeAndRender() {
+        // recalc based on container widths (responsive)
+        const globalContainer = document.getElementById("global-chart");
+        const countryContainer = document.getElementById("country-causes-chart");
+        const causeContainer = document.getElementById("cause-countries-chart");
+        if (globalContainer) {
+            const newWidth = globalContainer.clientWidth - 30;
+            if (newWidth > 100) width = Math.min(newWidth, 700);
+        }
+        renderAllCharts();
     }
 
-    update();
+    window.addEventListener('resize', () => {
+        setTimeout(resizeAndRender, 200);
+    });
 
-});
+    function processData(raw) {
+        // parse numeric rate
+        raw.forEach(d => {
+            d.rate = +d.VAL_DTHS_RATE100K_NUMERIC;
+            if (isNaN(d.rate)) d.rate = 0;
+            d.country = d.DIM_COUNTRY_CODE;
+            d.cause = d.DIM_GHECAUSE_TITLE;
+        });
+        fullData = raw;
 
+        // build countryMap & causeMap
+        countryMap.clear();
+        causeMap.clear();
+
+        fullData.forEach(record => {
+            const ctry = record.country;
+            const causeName = record.cause;
+            const rateVal = record.rate;
+
+            if (!countryMap.has(ctry)) countryMap.set(ctry, []);
+            countryMap.get(ctry).push({ cause: causeName, rate: rateVal });
+
+            if (!causeMap.has(causeName)) causeMap.set(causeName, []);
+            causeMap.get(causeName).push({ country: ctry, rate: rateVal });
+        });
+
+        // compute global average per cause (mean across all countries)
+        let causeSumMap = new Map();
+        let causeCountMap = new Map();
+        fullData.forEach(d => {
+            const cause = d.cause;
+            const rate = d.rate;
+            causeSumMap.set(cause, (causeSumMap.get(cause) || 0) + rate);
+            causeCountMap.set(cause, (causeCountMap.get(cause) || 0) + 1);
+        });
+        globalAvgCauses = Array.from(causeSumMap.keys()).map(cause => ({
+            cause: cause,
+            avgRate: causeSumMap.get(cause) / causeCountMap.get(cause)
+        }));
+        globalAvgCauses.sort((a,b) => b.avgRate - a.avgRate);
+
+        // get unique countries & sort alphabetically
+        allCountries = Array.from(countryMap.keys()).sort();
+        // get unique causes & sort alphabetically (but we also keep ordered for dropdown)
+        allCauses = Array.from(causeMap.keys()).sort();
+
+        // populate selects
+        const countrySelect = d3.select("#country-select");
+        countrySelect.html("");
+        countrySelect.append("option").attr("value", "").text("-- Select Country --").attr("disabled", true);
+        allCountries.forEach(c => {
+            countrySelect.append("option").attr("value", c).text(c);
+        });
+
+        const causeSelect = d3.select("#cause-select");
+        causeSelect.html("");
+        causeSelect.append("option").attr("value", "").text("-- Select Cause --").attr("disabled", true);
+        allCauses.forEach(c => {
+            causeSelect.append("option").attr("value", c).text(c.length > 60 ? c.slice(0,57)+"..." : c);
+        });
+
+        // set default selections: first country (AFG) and top global cause
+        const defaultCountry = allCountries.includes("AFG") ? "AFG" : allCountries[0];
+        let topCauseGlobal = globalAvgCauses.length ? globalAvgCauses[0].cause : (allCauses[0] || "Ischaemic heart disease");
+        countrySelect.property("value", defaultCountry);
+        causeSelect.property("value", topCauseGlobal);
+
+        document.getElementById("data-summary").innerHTML = `📈 ${fullData.length} records · ${allCountries.length} countries · ${allCauses.length} causes`;
+
+        // initial render
+        renderAllCharts();
+    }
+
+    function getTopCausesForCountry(countryCode, topN = 15) {
+        if (!countryMap.has(countryCode)) return [];
+        let causesList = countryMap.get(countryCode);
+        let filtered = causesList.filter(c => c.rate > 0).sort((a,b) => b.rate - a.rate);
+        return filtered.slice(0, topN);
+    }
+
+    function getTopCountriesForCause(causeName, topN = 15) {
+        if (!causeMap.has(causeName)) return [];
+        let countriesList = causeMap.get(causeName);
+        let filtered = countriesList.filter(c => c.rate > 0).sort((a,b) => b.rate - a.rate);
+        return filtered.slice(0, topN);
+    }
+
+    // ---------- RENDER GLOBAL TOP CAUSES (BAR CHART, CLICKABLE) ----------
+    function renderGlobalChart() {
+        const container = "#global-chart";
+        const containerDiv = document.getElementById("global-chart");
+        if (!containerDiv) return;
+        const currentWidth = containerDiv.clientWidth - 30;
+        const useWidth = Math.max(450, Math.min(currentWidth, 700));
+        const useHeight = 430;
+        
+        d3.select(container).html("");
+        const svg = d3.select(container)
+            .append("svg")
+            .attr("width", useWidth)
+            .attr("height", useHeight)
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+        
+        const innerWidth = useWidth - margin.left - margin.right;
+        const innerHeight = useHeight - margin.top - margin.bottom;
+        
+        const topData = globalAvgCauses.slice(0, 15);
+        const xScale = d3.scaleLinear()
+            .domain([0, d3.max(topData, d => d.avgRate) * 1.05])
+            .range([0, innerWidth]);
+        
+        const yScale = d3.scaleBand()
+            .domain(topData.map(d => d.cause))
+            .range([0, innerHeight])
+            .padding(0.2);
+        
+        // bars
+        svg.selectAll(".global-bar")
+            .data(topData)
+            .join("rect")
+            .attr("class", "global-bar")
+            .attr("y", d => yScale(d.cause))
+            .attr("height", yScale.bandwidth())
+            .attr("x", 0)
+            .attr("width", d => xScale(d.avgRate))
+            .attr("fill", "#3b82b6")
+            .attr("rx", 5)
+            .attr("ry", 5)
+            .on("mouseover", function(event, d) {
+                tooltip.style("opacity", 1)
+                    .html(`<strong>${d.cause}</strong><br>🌍 Global avg rate: ${d.avgRate.toFixed(2)} per 100k`)
+                    .style("left", (event.pageX + 12) + "px")
+                    .style("top", (event.pageY - 28) + "px");
+                d3.select(this).attr("fill", "#f4a261");
+            })
+            .on("mouseout", function() {
+                tooltip.style("opacity", 0);
+                d3.select(this).attr("fill", "#3b82b6");
+            })
+            .on("click", function(event, d) {
+                // update cause dropdown and refresh cause-country chart
+                d3.select("#cause-select").property("value", d.cause);
+                renderCauseCountriesChart();
+            });
+        
+        // x axis
+        svg.append("g")
+            .attr("transform", `translate(0, ${innerHeight})`)
+            .call(d3.axisBottom(xScale).ticks(5).tickFormat(d => d.toFixed(0)))
+            .style("font-size", "10px");
+        
+        // y axis
+        svg.append("g")
+            .call(d3.axisLeft(yScale).tickSize(0))
+            .style("font-size", "9px")
+            .selectAll(".tick text")
+            .call(wrapText, 120);
+        
+        // labels
+        svg.append("text")
+            .attr("x", innerWidth/2)
+            .attr("y", -20)
+            .attr("text-anchor", "middle")
+            .style("font-size", "11px")
+            .style("fill", "#2c5a7a")
+            .text("▲ death rate per 100,000");
+    }
+    
+    function wrapText(textSelection, widthLimit) {
+        textSelection.each(function() {
+            const text = d3.select(this);
+            const words = text.text().split(/\s+/);
+            let line = [];
+            let lineNumber = 0;
+            const lineHeight = 1.1;
+            const y = text.attr("y");
+            const dy = parseFloat(text.attr("dy") || 0);
+            let tspan = text.text(null).append("tspan").attr("x", -8).attr("dy", dy + "em");
+            words.forEach(word => {
+                line.push(word);
+                tspan.text(line.join(" "));
+                if (tspan.node().getComputedTextLength() > widthLimit && line.length > 1) {
+                    line.pop();
+                    tspan.text(line.join(" "));
+                    line = [word];
+                    tspan = text.append("tspan").attr("x", -8).attr("dy", lineHeight + "em").text(word);
+                    lineNumber++;
+                }
+            });
+        });
+    }
+    
+    // ---------- RENDER COUNTRY-SPECIFIC TOP CAUSES (BAR CHART) ----------
+    function renderCountryCausesChart() {
+        const selectedCountry = d3.select("#country-select").property("value");
+        if (!selectedCountry) return;
+        const containerDiv = document.getElementById("country-causes-chart");
+        if (!containerDiv) return;
+        const currentWidth = containerDiv.clientWidth - 30;
+        const useWidth = Math.max(450, Math.min(currentWidth, 700));
+        const useHeight = 430;
+        
+        d3.select("#country-causes-chart").html("");
+        const svg = d3.select("#country-causes-chart")
+            .append("svg")
+            .attr("width", useWidth)
+            .attr("height", useHeight)
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+        
+        const innerWidth = useWidth - margin.left - margin.right;
+        const innerHeight = useHeight - margin.top - margin.bottom;
+        
+        const topCauses = getTopCausesForCountry(selectedCountry, 15);
+        if (topCauses.length === 0) {
+            svg.append("text").attr("x", 50).attr("y", 80).text("⚠️ No data for this country").attr("fill", "#aaa");
+            return;
+        }
+        
+        const xScale = d3.scaleLinear()
+            .domain([0, d3.max(topCauses, d => d.rate) * 1.05])
+            .range([0, innerWidth]);
+        const yScale = d3.scaleBand()
+            .domain(topCauses.map(d => d.cause))
+            .range([0, innerHeight])
+            .padding(0.2);
+        
+        svg.selectAll(".country-bar")
+            .data(topCauses)
+            .join("rect")
+            .attr("class", "country-bar")
+            .attr("y", d => yScale(d.cause))
+            .attr("height", yScale.bandwidth())
+            .attr("x", 0)
+            .attr("width", d => xScale(d.rate))
+            .attr("fill", "#2c9c6e")
+            .attr("rx", 4)
+            .on("mouseover", function(event, d) {
+                tooltip.style("opacity", 1)
+                    .html(`<strong>${d.cause}</strong><br>📍 ${selectedCountry} rate: ${d.rate.toFixed(2)} per 100k`)
+                    .style("left", (event.pageX + 12) + "px")
+                    .style("top", (event.pageY - 28) + "px");
+                d3.select(this).attr("fill", "#e9a23b");
+            })
+            .on("mouseout", function() {
+                tooltip.style("opacity", 0);
+                d3.select(this).attr("fill", "#2c9c6e");
+            });
+        
+        svg.append("g")
+            .attr("transform", `translate(0, ${innerHeight})`)
+            .call(d3.axisBottom(xScale).ticks(5).tickFormat(d => d.toFixed(0)));
+        svg.append("g").call(d3.axisLeft(yScale).tickSize(0)).selectAll(".tick text").call(wrapText, 130);
+        
+        document.getElementById("country-chart-title").innerHTML = `🏥 Top causes · ${selectedCountry}`;
+    }
+    
+    // ---------- RENDER TOP COUNTRIES FOR SELECTED CAUSE (BAR CHART) ----------
+    function renderCauseCountriesChart() {
+        const selectedCause = d3.select("#cause-select").property("value");
+        if (!selectedCause) return;
+        const containerDiv = document.getElementById("cause-countries-chart");
+        if (!containerDiv) return;
+        const currentWidth = containerDiv.clientWidth - 30;
+        const useWidth = Math.max(450, Math.min(currentWidth, 700));
+        const useHeight = 430;
+        
+        d3.select("#cause-countries-chart").html("");
+        const svg = d3.select("#cause-countries-chart")
+            .append("svg")
+            .attr("width", useWidth)
+            .attr("height", useHeight)
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+        
+        const innerWidth = useWidth - margin.left - margin.right;
+        const innerHeight = useHeight - margin.top - margin.bottom;
+        
+        const topCountries = getTopCountriesForCause(selectedCause, 15);
+        if (topCountries.length === 0) {
+            svg.append("text").attr("x", 50).attr("y", 80).text("No data for this cause").attr("fill", "#aaa");
+            return;
+        }
+        
+        const xScale = d3.scaleLinear()
+            .domain([0, d3.max(topCountries, d => d.rate) * 1.05])
+            .range([0, innerWidth]);
+        const yScale = d3.scaleBand()
+            .domain(topCountries.map(d => d.country))
+            .range([0, innerHeight])
+            .padding(0.2);
+        
+        svg.selectAll(".cause-bar")
+            .data(topCountries)
+            .join("rect")
+            .attr("class", "cause-bar")
+            .attr("y", d => yScale(d.country))
+            .attr("height", yScale.bandwidth())
+            .attr("x", 0)
+            .attr("width", d => xScale(d.rate))
+            .attr("fill", "#c44569")
+            .attr("rx", 4)
+            .on("mouseover", function(event, d) {
+                tooltip.style("opacity", 1)
+                    .html(`<strong>${selectedCause}</strong><br>🇺🇳 ${d.country}: ${d.rate.toFixed(2)} per 100k`)
+                    .style("left", (event.pageX + 12) + "px")
+                    .style("top", (event.pageY - 28) + "px");
+                d3.select(this).attr("fill", "#f39c12");
+            })
+            .on("mouseout", function() {
+                tooltip.style("opacity", 0);
+                d3.select(this).attr("fill", "#c44569");
+            })
+            .on("click", function(event, d) {
+                // optional: clicking a country bar updates country selector and country chart
+                d3.select("#country-select").property("value", d.country);
+                renderCountryCausesChart();
+            });
+        
+        svg.append("g")
+            .attr("transform", `translate(0, ${innerHeight})`)
+            .call(d3.axisBottom(xScale).ticks(5).tickFormat(d => d.toFixed(0)));
+        svg.append("g").call(d3.axisLeft(yScale).tickSize(0)).selectAll(".tick text").call(wrapText, 70);
+        
+        let shortCause = selectedCause.length > 45 ? selectedCause.slice(0,42)+"..." : selectedCause;
+        document.getElementById("cause-chart-title").innerHTML = `🌎 Top countries · ${shortCause}`;
+    }
+    
+    // render all three charts cleanly
+    function renderAllCharts() {
+        renderGlobalChart();
+        renderCountryCausesChart();
+        renderCauseCountriesChart();
+    }
+    
+    // update handlers
+    function onCountryChange() {
+        renderCountryCausesChart();
+    }
+    
+    function onCauseChange() {
+        renderCauseCountriesChart();
+    }
+    
+    // ---------- LOAD DATA ----------
+    d3.csv("GHE_FULL_DD.csv").then(rawData => {
+        processData(rawData);
+        // attach events after population
+        d3.select("#country-select").on("change", onCountryChange);
+        d3.select("#cause-select").on("change", onCauseChange);
+        window.addEventListener('resize', () => { setTimeout(() => { renderAllCharts(); }, 150); });
+    }).catch(err => {
+        console.error("Error loading CSV:", err);
+        document.getElementById("data-summary").innerHTML = "❌ Error loading CSV. Make sure GHE_FULL_DD.csv is in same folder.";
+        d3.select("#global-chart").append("div").style("padding","2rem").text("Failed to load dataset. Check file path or server.");
+    });
 </script>
-
 </body>
 </html>
