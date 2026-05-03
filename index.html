@@ -1,1 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>WHO/D3 Advanced Dashboard</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
 
+<style>
+body { font-family: Arial; background:#f4f4f4; }
+.chart { display:inline-block; margin:20px; background:white; padding:10px; border-radius:8px; }
+.tooltip {
+    position:absolute;
+    background:black;
+    color:white;
+    padding:6px;
+    border-radius:5px;
+    font-size:12px;
+    pointer-events:none;
+    opacity:0;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Interactive Global Health Dashboard (D3 + Live Data)</h2>
+
+<label>Year: <span id="yearLabel"></span></label>
+<input type="range" id="yearSlider">
+
+<div id="tooltip" class="tooltip"></div>
+
+<div id="lineChart" class="chart"></div>
+<div id="bubbleChart" class="chart"></div>
+
+<script>
+
+// ================= LIVE DATA =================
+const API_URL = "https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/data_gapminder.csv";
+
+const tooltip = d3.select("#tooltip");
+
+// ================= LOAD DATA =================
+d3.csv(API_URL).then(data => {
+
+    data.forEach(d => {
+        d.year = +d.year;
+        d.gdpPercap = +d.gdpPercap;
+        d.lifeExp = +d.lifeExp;
+        d.pop = +d.pop;
+    });
+
+    const years = [...new Set(data.map(d => d.year))].sort();
+
+    // ================= SLIDER =================
+    const slider = d3.select("#yearSlider")
+        .attr("min", d3.min(years))
+        .attr("max", d3.max(years))
+        .attr("value", d3.min(years));
+
+    let currentYear = +slider.node().value;
+    d3.select("#yearLabel").text(currentYear);
+
+    slider.on("input", function(){
+        currentYear = +this.value;
+        d3.select("#yearLabel").text(currentYear);
+        update();
+    });
+
+    // ================= LINE CHART =================
+    const width = 500, height = 300;
+
+    const svgLine = d3.select("#lineChart")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+    const x = d3.scaleLinear().range([50, width-20]);
+    const y = d3.scaleLinear().range([height-40, 20]);
+
+    svgLine.append("g").attr("class","x-axis")
+        .attr("transform", `translate(0,${height-40})`);
+
+    svgLine.append("g").attr("class","y-axis")
+        .attr("transform", `translate(50,0)`);
+
+    const line = d3.line()
+        .x(d => x(d.year))
+        .y(d => y(d.lifeExp));
+
+    const path = svgLine.append("path")
+        .attr("fill","none")
+        .attr("stroke","steelblue")
+        .attr("stroke-width",2);
+
+    // ================= BUBBLE PACK =================
+    const svgBubble = d3.select("#bubbleChart")
+        .append("svg")
+        .attr("width", 500)
+        .attr("height", 300);
+
+    function update(){
+
+        const yearData = data.filter(d => d.year === currentYear);
+
+        const selectedCountry = "Canada";
+        const countryData = data.filter(d => d.country === selectedCountry);
+
+        // ================= LINE =================
+        x.domain(d3.extent(countryData, d => d.year));
+        y.domain([0, d3.max(countryData, d => d.lifeExp)]);
+
+        svgLine.select(".x-axis")
+            .transition().duration(700)
+            .call(d3.axisBottom(x).tickFormat(d3.format("d")));
+
+        svgLine.select(".y-axis")
+            .transition().duration(700)
+            .call(d3.axisLeft(y));
+
+        path.datum(countryData)
+            .transition().duration(700)
+            .attr("d", line);
+
+        // ================= BUBBLE PACK =================
+        const root = d3.pack()
+            .size([500,300])
+            .padding(5)(
+                d3.hierarchy({children: yearData})
+                .sum(d => d.pop)
+            );
+
+        const nodes = svgBubble.selectAll("circle")
+            .data(root.leaves(), d => d.data.country);
+
+        nodes.enter()
+            .append("circle")
+            .merge(nodes)
+            .transition().duration(700)
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y)
+            .attr("r", d => d.r)
+            .attr("fill","orange")
+            .on("mouseover", (event,d)=>{
+                tooltip.style("opacity",1)
+                    .html(
+                        `<b>${d.data.country}</b><br>
+                        Life Exp: ${d.data.lifeExp}<br>
+                        GDP: ${d.data.gdpPercap}`
+                    )
+                    .style("left", (event.pageX+10)+"px")
+                    .style("top", (event.pageY-20)+"px");
+            })
+            .on("mouseout", ()=> tooltip.style("opacity",0));
+
+        nodes.exit().remove();
+    }
+
+    update();
+
+});
+
+</script>
+
+</body>
+</html>
