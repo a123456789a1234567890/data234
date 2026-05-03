@@ -596,7 +596,7 @@
     d3.csv("GHE_FULL_DD.csv").then(rawData => {
         fullData = rawData.map(d => ({
             country: d.DIM_COUNTRY_CODE,
-            year: +d.DIM_YEAR_CODE,
+            year: +d.DIM_YEAR_CODE, 
             cause: d.DIM_GHECAUSE_TITLE,
             rate: +d.VAL_DTHS_RATE100K_NUMERIC || 0
         }));
