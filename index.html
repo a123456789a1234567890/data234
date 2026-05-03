@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>WHO/D3 Advanced Dashboard</title>
+<title>D3 Working Global Dashboard</title>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 
 <style>
@@ -23,7 +23,7 @@ body { font-family: Arial; background:#f4f4f4; }
 
 <body>
 
-<h2>Interactive Global Health Dashboard (D3 + Live Data)</h2>
+<h2>Interactive Global Health Dashboard (Working Version)</h2>
 
 <label>Year: <span id="yearLabel"></span></label>
 <input type="range" id="yearSlider">
@@ -35,22 +35,24 @@ body { font-family: Arial; background:#f4f4f4; }
 
 <script>
 
-// ================= LIVE DATA =================
+// ================= STABLE DATA SOURCE =================
 const API_URL = "https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/data_gapminder.csv";
 
 const tooltip = d3.select("#tooltip");
 
 // ================= LOAD DATA =================
-d3.csv(API_URL).then(data => {
+d3.csv(API_URL).then(raw => {
 
+    let data = raw;
+
+    // CLEAN DATA TYPES
     data.forEach(d => {
         d.year = +d.year;
-        d.gdpPercap = +d.gdpPercap;
         d.lifeExp = +d.lifeExp;
         d.pop = +d.pop;
     });
 
-    const years = [...new Set(data.map(d => d.year))].sort();
+    const years = [...new Set(data.map(d => d.year))].sort((a,b)=>a-b);
 
     // ================= SLIDER =================
     const slider = d3.select("#yearSlider")
@@ -93,22 +95,26 @@ d3.csv(API_URL).then(data => {
         .attr("stroke","steelblue")
         .attr("stroke-width",2);
 
-    // ================= BUBBLE PACK =================
+    // ================= BUBBLE CHART =================
     const svgBubble = d3.select("#bubbleChart")
         .append("svg")
         .attr("width", 500)
         .attr("height", 300);
 
+    // ================= UPDATE FUNCTION =================
     function update(){
 
-        const yearData = data.filter(d => d.year === currentYear);
+        const filtered = data.filter(d => d.year === currentYear);
 
-        const selectedCountry = "Canada";
-        const countryData = data.filter(d => d.country === selectedCountry);
+        // ---------- LINE (GLOBAL AVERAGE) ----------
+        const avgByYear = d3.rollups(
+            data,
+            v => d3.mean(v, d => d.lifeExp),
+            d => d.year
+        ).map(d => ({year:d[0], lifeExp:d[1]}));
 
-        // ================= LINE =================
-        x.domain(d3.extent(countryData, d => d.year));
-        y.domain([0, d3.max(countryData, d => d.lifeExp)]);
+        x.domain(d3.extent(avgByYear, d => d.year));
+        y.domain([0, d3.max(avgByYear, d => d.lifeExp)]);
 
         svgLine.select(".x-axis")
             .transition().duration(700)
@@ -118,15 +124,15 @@ d3.csv(API_URL).then(data => {
             .transition().duration(700)
             .call(d3.axisLeft(y));
 
-        path.datum(countryData)
+        path.datum(avgByYear)
             .transition().duration(700)
             .attr("d", line);
 
-        // ================= BUBBLE PACK =================
+        // ---------- BUBBLE PACK ----------
         const root = d3.pack()
             .size([500,300])
             .padding(5)(
-                d3.hierarchy({children: yearData})
+                d3.hierarchy({children: filtered})
                 .sum(d => d.pop)
             );
 
@@ -143,13 +149,13 @@ d3.csv(API_URL).then(data => {
             .attr("fill","orange")
             .on("mouseover", (event,d)=>{
                 tooltip.style("opacity",1)
-                    .html(
-                        `<b>${d.data.country}</b><br>
-                        Life Exp: ${d.data.lifeExp}<br>
-                        GDP: ${d.data.gdpPercap}`
-                    )
-                    .style("left", (event.pageX+10)+"px")
-                    .style("top", (event.pageY-20)+"px");
+                    .html(`
+                        <b>${d.data.country}</b><br>
+                        Life Exp: ${d.data.lifeExp.toFixed(2)}<br>
+                        Population: ${d.data.pop}
+                    `)
+                    .style("left",(event.pageX+10)+"px")
+                    .style("top",(event.pageY-20)+"px");
             })
             .on("mouseout", ()=> tooltip.style("opacity",0));
 
